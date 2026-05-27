@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>지능형 디지털 트윈 데이터센터 — DT Monitoring</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --bg:#0d1622; --bg2:#0a1119; --txt:#d4ece6; --sub:#6a9a8a;
+  --mint:#5DCAA5; --mint2:#9FE1CB; --cyan:#5ee0e8; --blue:#2a7fd4;
+  --amber:#EF9F27; --red:#E24B4A; --teal:#2ec4b6;
+  --line:rgba(29,158,117,.18); --line2:rgba(46,196,182,.35);
+  --panel:rgba(8,20,36,.6); --panel2:rgba(10,22,38,.85);
+  --mono:'Courier New',monospace;
+}
+body{background:#0d1622;color:var(--txt);font-family:'Segoe UI','Malgun Gothic',sans-serif;
+  overflow:hidden;position:fixed;inset:0;display:flex;flex-direction:column;
+  background-image:radial-gradient(circle at 50% 0%,#11233a 0%,#0d1622 55%,#080f18 100%);}
+
+/* ===== 헤더 ===== */
+header{display:flex;align-items:center;gap:14px;padding:9px 18px;
+  background:linear-gradient(180deg,rgba(8,20,36,.9),rgba(8,14,22,.7));
+  border-bottom:1px solid var(--line2);}
+.brand{font-size:15px;font-weight:700;letter-spacing:.03em;}
+.brand b{color:var(--mint);} .brand .dt{color:var(--cyan);}
+.brand .sub{display:block;font-size:10px;color:var(--sub);font-weight:500;margin-top:1px;letter-spacing:.01em;}
+.live{display:flex;align-items:center;gap:5px;font-size:10px;font-weight:700;color:var(--red);
+  font-family:var(--mono);padding:3px 9px;border:1px solid rgba(226,75,74,.4);border-radius:3px;
+  background:rgba(226,75,74,.08);}
+.live .dot{width:7px;height:7px;border-radius:50%;background:var(--red);animation:bl 1s infinite;}
+.clock{font-family:var(--mono);font-size:11px;color:var(--sub);}
+header .stats{margin-left:auto;display:flex;gap:7px;}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:5px 12px;text-align:center;min-width:80px;}
+.stat .l{font-size:9px;color:var(--sub);letter-spacing:.02em;}
+.stat .v{font-size:15px;font-weight:700;font-family:var(--mono);}
+.stat .v.ok{color:var(--mint);} .stat .v.cy{color:var(--cyan);} .stat .v.am{color:var(--amber);}
+
+/* ===== 탭바 ===== */
+.tabbar{display:flex;align-items:flex-end;gap:4px;padding:7px 18px 0;
+  background:rgba(8,14,22,.5);border-bottom:1px solid var(--line2);}
+.tab{background:var(--panel);border:1px solid var(--line);border-bottom:none;color:var(--sub);
+  font-size:12px;font-weight:600;padding:7px 18px;border-radius:6px 6px 0 0;cursor:pointer;
+  font-family:inherit;letter-spacing:.02em;transition:all .18s;white-space:nowrap;position:relative;top:1px;}
+.tab:hover{color:var(--mint2);background:rgba(29,158,117,.1);}
+.tab.active{background:rgba(29,158,117,.16);color:var(--mint2);border-color:var(--line2);
+  box-shadow:0 -2px 12px rgba(120,224,200,.18);}
+.tabbar .spacer{flex:1;}
+.legend{display:flex;gap:12px;font-size:10px;color:var(--sub);align-items:center;padding-bottom:6px;flex-wrap:wrap;}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:middle;}
+.viewtog{display:flex;gap:5px;padding-bottom:6px;align-items:center;}
+.viewtog span{font-size:10px;color:var(--sub);}
+.viewtog button{background:var(--panel);border:1px solid var(--line);color:var(--txt);
+  padding:5px 11px;border-radius:4px;cursor:pointer;font-size:11px;font-family:inherit;transition:all .15s;}
+.viewtog button.active{background:var(--cyan);color:#04121a;font-weight:700;border-color:var(--cyan);
+  box-shadow:0 0 12px rgba(94,224,232,.4);}
+
+/* ===== 메인 ===== */
+main{flex:1;display:flex;min-height:0;}
+#stage{flex:1;position:relative;overflow:hidden;}
+/* 스캔라인 효과 */
+#stage::after{content:"";position:absolute;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,transparent,rgba(94,224,232,.5),transparent);
+  animation:scan 60s linear infinite;pointer-events:none;z-index:5;}
+@keyframes scan{0%{top:0;}100%{top:100%;}}
+#svgWrap,#three{position:absolute;inset:0;width:100%;height:100%;}
+#three{display:none;}
+svg{width:100%;height:100%;}
+.room{cursor:pointer;transition:opacity .15s;}
+.room:hover{opacity:.88;}
+.room rect.body{stroke:rgba(8,14,22,.9);stroke-width:1.5;}
+.room rect.glow{fill:none;stroke-width:1;opacity:.55;}
+.room text.t{fill:var(--txt);font-size:12px;font-weight:700;pointer-events:none;}
+.room text.m{fill:var(--mint2);font-size:9px;font-family:var(--mono);font-weight:500;}
+.room text.d{fill:var(--sub);font-size:8.5px;font-family:var(--mono);}
+.floorTitle{fill:var(--cyan);font-size:14px;font-weight:700;letter-spacing:.03em;}
+.compass{fill:var(--sub);font-size:9px;font-family:var(--mono);}
+.gridline{stroke:rgba(46,196,182,.07);stroke-width:1;}
+
+/* ===== 사이드 패널 ===== */
+aside{width:310px;background:var(--panel2);border-left:1px solid var(--line2);
+  padding:0;overflow-y:auto;display:flex;flex-direction:column;}
+.aHead{padding:12px 14px 10px;border-bottom:1px solid var(--line);}
+.aHead h3{font-size:14px;color:var(--cyan);letter-spacing:.02em;}
+.aHead .scat{font-size:10px;color:var(--sub);font-family:var(--mono);margin-top:2px;}
+.aBody{padding:12px 14px;flex:1;}
+.ph{color:var(--sub);font-size:12px;line-height:1.7;}
+.ph b{color:var(--mint2);}
+.kv{display:flex;justify-content:space-between;font-size:11px;padding:6px 0;border-bottom:1px solid var(--line);}
+.kv .k{color:var(--sub);} .kv .v{font-weight:700;font-family:var(--mono);color:var(--txt);}
+.bar{height:5px;background:rgba(8,20,36,.8);border-radius:3px;margin:7px 0 2px;overflow:hidden;}
+.bar i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,var(--mint),var(--mint2));}
+.desc{font-size:11px;color:#bcd6ce;line-height:1.6;margin-top:12px;background:rgba(29,158,117,.08);
+  padding:10px;border-radius:4px;border-left:2px solid var(--mint);}
+.pill{display:inline-block;font-size:9px;font-weight:700;padding:3px 9px;border-radius:3px;
+  margin-top:10px;font-family:var(--mono);letter-spacing:.03em;}
+.pill.ok{background:rgba(93,202,165,.14);color:var(--mint);border:1px solid rgba(93,202,165,.3);}
+.pill.wn{background:rgba(239,159,39,.14);color:var(--amber);border:1px solid rgba(239,159,39,.35);}
+.mini{margin-top:14px;}
+.mini .lab{font-size:10px;color:var(--sub);font-family:var(--mono);margin-bottom:4px;}
+.alarm{font-size:10.5px;padding:7px 9px;border-radius:4px;margin-bottom:5px;font-family:var(--mono);
+  background:rgba(8,20,36,.6);border-left:2px solid var(--mint);}
+.alarm.a-wn{border-left-color:var(--amber);} .alarm.a-rd{border-left-color:var(--red);}
+.alarm .tm{color:var(--sub);font-size:9px;}
+/* 랙 HW 슬롯 */
+.hwslot{background:rgba(8,20,36,.6);border-left:3px solid var(--blue);border-radius:0 4px 4px 0;
+  padding:7px 9px;margin-bottom:6px;font-family:var(--mono);}
+.hwslot.empty{border-left-color:#3a4a5a;color:var(--sub);font-size:10px;padding:5px 9px;opacity:.6;}
+.hwslot .hwt{font-size:11px;font-weight:700;color:var(--mint2);margin-bottom:4px;}
+.hwslot .hwr{font-size:9.5px;color:#bcd6ce;padding:1.5px 0;display:flex;gap:6px;}
+.hwslot .hwr span{display:inline-block;width:30px;color:var(--sub);flex-shrink:0;}
+.backbtn{margin-top:12px;text-align:center;background:rgba(46,196,182,.14);border:1px solid var(--line2);
+  border-radius:4px;padding:8px;font-size:11px;color:var(--cyan);cursor:pointer;font-family:var(--mono);transition:all .15s;}
+.backbtn:hover{background:rgba(46,196,182,.25);}
+
+footer{padding:5px 18px;font-size:9px;color:var(--sub);background:rgba(8,14,22,.7);
+  border-top:1px solid var(--line);text-align:center;font-family:var(--mono);}
+
+@keyframes bl{0%,100%{opacity:1;}50%{opacity:.3;}}
+@keyframes autopulse{0%,100%{box-shadow:0 0 0 0 rgba(120,224,200,0);}50%{box-shadow:0 0 14px 0 rgba(120,224,200,.45);}}
+.pulse{animation:autopulse 1.6s ease-in-out infinite;}
+</style>
+</head>
+<body>
+  <header>
+    <div>
+      <div class="brand">지능형 <b>디지털 트윈</b> <span class="dt">데이터센터</span>
+        <span class="sub">㈜멘사월드 사업안 · 1단계 512 GPU / 1MW급 · 연면적 480㎡ · 대지 4,250㎡</span>
+      </div>
+    </div>
+    <div class="live"><span class="dot"></span>LIVE</div>
+    <div class="clock" id="clock">--:--:--</div>
+    <div class="stats">
+      <div class="stat"><div class="l">IT 부하</div><div class="v cy">0.75MW</div></div>
+      <div class="stat"><div class="l">수전</div><div class="v">1.05MW</div></div>
+      <div class="stat"><div class="l">PUE</div><div class="v ok">1.40</div></div>
+      <div class="stat"><div class="l">GPU</div><div class="v cy">512</div></div>
+      <div class="stat"><div class="l">평균온도</div><div class="v ok" id="tAvg">23.4°C</div></div>
+    </div>
+  </header>
+
+  <div class="tabbar">
+    <button class="tab active" data-f="2">2F · 서버 B / 사무 / 옥상</button>
+    <button class="tab" data-f="1">1F · 로비 / 통합관제 / 서버 A</button>
+    <button class="tab" data-f="0">B1 · 전력 / 냉각 인프라</button>
+    <button class="tab" data-f="S">단면도 · SECTION A-A'</button>
+    <span class="spacer"></span>
+    <div class="legend">
+      <span><i style="background:#2a7fd4"></i>서버/IT</span>
+      <span><i style="background:#8b5cf6"></i>전력</span>
+      <span><i style="background:#2ec4b6"></i>냉각/공조</span>
+      <span><i style="background:#EF9F27"></i>관제/업무</span>
+      <span><i style="background:#5a6a7a"></i>공용</span>
+      <span><i style="background:#7a8a6a"></i>코어(계단/위생)</span>
+    </div>
+    <div class="viewtog">
+      <span>VIEW</span>
+      <button id="btn2d" class="active">2D PLAN</button>
+      <button id="btn3d">3D TWIN</button>
+    </div>
+  </div>
+
+  <main>
+    <div id="stage">
+      <div id="svgWrap"><svg id="plan" viewBox="0 0 780 560" preserveAspectRatio="xMidYMid meet"></svg></div>
+      <div id="three"></div>
+    </div>
+    <aside>
+      <div class="aHead"><h3 id="aTitle">SYSTEM OVERVIEW</h3><div class="scat" id="aCat">시설을 선택하세요</div></div>
+      <div class="aBody" id="aBody">
+        <div class="ph">평면도의 시설(<b>서버실·공조실·전력실</b> 등)을 클릭하면<br>실시간 상태·용량·설명이 표시됩니다.<br><br>상단 <b>탭</b>으로 층을 전환하고,<br>우측 <b>2D↔3D</b>로 뷰를 바꿀 수 있습니다.</div>
+        <div class="mini">
+          <div class="lab">▌ AI 자동조치 · 최근 알림</div>
+          <div class="alarm a-wn pulse"><b>서버실 A RACK-B12 GPU 87°C</b><br><span class="tm">2분 전 · AI 냉각팬 RPM 자동증가 → 정상화</span></div>
+          <div class="alarm a-rd"><b>옥상 냉각타워 부하 88%</b><br><span class="tm">15분 전 · CRAC-3 분산 권고</span></div>
+          <div class="alarm"><b>야간 유휴 GPU 28장 절전 전환</b><br><span class="tm">2시간 전 · 34kWh 절약</span></div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <footer>INTELLIGENT DIGITAL TWIN DATA CENTER · 건축 트윈 개념 시각화 · 면적/전력은 1단계 사업안 추산치 · 2026-05-27 · AUTO 순환 갱신 중 · 조작 시 정지</footer>
+
+<script>
+/* ===== 시설 데이터 (color = 카테고리) ===== */
+const C={srv:"#2a7fd4",pwr:"#8b5cf6",cool:"#2ec4b6",ops:"#EF9F27",util:"#5a6a7a",core:"#7a8a6a"};
+const FLOORS={
+ "0":{title:"B1 — 전력·냉각 인프라층",rooms:[
+   {id:"recv",name:"수전·변전실",cat:"전력 / POWER",c:C.pwr,x:40,y:60,w:230,h:170,load:62,
+     kv:{"수전용량":"1.05 MW","전압":"22.9kV→저압","피크":"0.78 MW"},st:"ok",
+     desc:"한전 인입 고압을 DC 저압으로 변환. 사업 최대 선결과제(계통연계 확약)가 이 설비의 전력 공급 가능 여부."},
+   {id:"ups",name:"UPS·배터리실",cat:"전력 / POWER",c:C.pwr,x:290,y:60,w:200,h:170,load:68,
+     kv:{"백업":"무정전 15분","뱅크":"2모듈 N+1","부하율":"68%"},st:"ok",
+     desc:"순간 정전 시 비상발전기 기동까지 무중단 공급. GPU 클러스터는 순단에 학습이 깨져 N+1 이중화 필수."},
+   {id:"gen",name:"비상발전기실",cat:"전력 / POWER",c:C.pwr,x:510,y:60,w:230,h:170,load:0,
+     kv:{"용량":"1.25 MVA","연료":"디젤 8h","자동기동":"10초"},st:"ok",
+     desc:"정전 장기화 대비 자가발전. UPS가 버티는 동안 자동 기동해 부하 인계."},
+   {id:"pump",name:"냉각수 펌프·축열조",cat:"냉각 / COOLING",c:C.cool,x:40,y:260,w:300,h:240,load:55,
+     kv:{"공급/회수":"7℃ / 14℃","펌프":"3대(1예비)","CDU연계":"1F·2F"},st:"ok",
+     desc:"옥상 냉각타워↔서버실 CDU(액냉 분배)로 순환. GPU 고밀도 랙(30~40kW)은 공냉 한계라 액냉 병행."},
+   {id:"tank",name:"소화·저수조",cat:"공용 / UTILITY",c:C.util,x:360,y:260,w:170,h:240,load:0,
+     kv:{"소화방식":"청정약제(가스)","구역":"서버실 전용"},st:"ok",
+     desc:"서버실은 물 대신 가스계 소화 — 장비 손상 없이 화재 진압. 재난관리 기능과 연동."},
+   {id:"corrB",name:"케이블 트레이·통로",cat:"공용 / UTILITY",c:C.util,x:550,y:260,w:190,h:170,load:0,
+     kv:{"용도":"전력·통신 간선","바닥":"트렌치"},st:"ok",
+     desc:"전력·통신 케이블 간선 경로. 상부 층 서버실로 부스덕트·광케이블 수직 상승."},
+   {id:"stairB1",name:"비상계단 1",cat:"코어 / CORE",c:C.core,x:550,y:440,w:90,h:60,load:0,
+     kv:{"피난":"방화구획","폭":"1.2m"},st:"ok",desc:"피난 동선. 방화문·제연 전실 포함. 전 층 관통 직통계단."},
+   {id:"stairB2",name:"비상계단 2",cat:"코어 / CORE",c:C.core,x:650,y:440,w:90,h:60,load:0,
+     kv:{"피난":"방화구획","폭":"1.2m"},st:"ok",desc:"2방향 피난을 위한 반대편 직통계단."},
+ ]},
+ "1":{title:"1F — 로비·통합관제·서버실 A",rooms:[
+   {id:"lobby",name:"로비·보안 출입통제",cat:"관제 / OPS",c:C.ops,x:40,y:60,w:210,h:150,load:20,
+     kv:{"출입":"생체+카드 2단계","CCTV":"전구역"},st:"ok",
+     desc:"맨트랩(2중문)·생체인증으로 무단 출입 차단. CCTV·방범이 디지털트윈에 실시간 연동."},
+   {id:"noc",name:"NOC 통합관제실 ★",cat:"관제 / OPS",c:C.ops,x:270,y:60,w:240,h:150,load:45,
+     kv:{"운영":"1인 통합관제","스크린":"DT 메인","알림":"AI 자동"},st:"ok",
+     desc:"이 사업의 심장. 전력·온도·서버·CCTV·화재를 단일 디지털트윈 화면에서 1인 관제. AI가 이상징후를 사람보다 먼저 감지."},
+   {id:"office1",name:"운영 사무실",cat:"관제 / OPS",c:C.ops,x:530,y:60,w:210,h:150,load:30,
+     kv:{"상주":"기획·백엔드","좌석":"7인 정예"},st:"ok",
+     desc:"7인 정예팀(기획1·백엔드2·디자인2·클라이언트2) 업무 공간."},
+   {id:"srvA",name:"서버실 A (GPU 랙)",cat:"서버 / IT",c:C.srv,x:40,y:240,w:430,h:260,load:84,rackRoom:"A",
+     kv:{"GPU":"H100×384 / H200×128","랙":"12","밀도":"30~40kW/랙"},st:"wn",
+     desc:"512 GPU 주력 클러스터(서버 64대 다수 수용). 핫/콜드 아일 차폐 + 액냉 CDU로 고밀도 발열 제어. 면적은 작아도(≈130㎡) 가치밀도 최고. ▶ 클릭하면 랙 도열 뷰로 진입."},
+   {id:"crac1",name:"공조실 CRAC/CDU A",cat:"냉각 / COOLING",c:C.cool,x:490,y:240,w:250,h:160,load:72,
+     kv:{"CRAC":"3대 N+1","냉방":"항온항습","COP":"3.84"},st:"ok",
+     desc:"서버실 A 전용 항온항습. AI가 시간대별 부하를 예측해 냉각 팬 RPM을 선제 조정(에너지 절감)."},
+   {id:"mdf",name:"통신실 (MDF)",cat:"서버 / IT",c:C.srv,x:490,y:420,w:130,h:80,load:40,
+     kv:{"회선":"이중화 10Gbps","ISP":"멀티캐리어"},st:"ok",
+     desc:"외부 인터넷 회선 집선. 이중화로 단일 회선 장애에도 무중단."},
+   {id:"wc1",name:"화장실 (M/W)",cat:"코어 / CORE",c:C.core,x:630,y:420,w:110,h:80,load:0,
+     kv:{"구분":"남/여 분리","장애인":"겸용 1"},st:"ok",desc:"공용 위생시설. 급배수 코어 PS와 인접 배치."},
+ ]},
+ "2":{title:"2F — 서버실 B(증설)·사무·옥상설비",rooms:[
+   {id:"srvB",name:"서버실 B (증설 여유)",cat:"서버 / IT",c:C.srv,x:40,y:60,w:430,h:280,load:32,rackRoom:"B",
+     kv:{"용도":"2단계 증설","목표":"H200/B200 추가","현재":"부분가동"},st:"wn",
+     desc:"수요 검증 후 2단계 증설 공간. 1,000장대 확장 시 B200 추가. 현재는 일부만 가동해 유연 대응. ▶ 클릭하면 랙 도열 뷰로 진입."},
+   {id:"crac2",name:"공조실 CRAC/CDU B",cat:"냉각 / COOLING",c:C.cool,x:490,y:60,w:250,h:160,load:38,
+     kv:{"CRAC":"2대","상태":"대기/부분"},st:"ok",
+     desc:"서버실 B 전용. 증설 단계에 맞춰 단계적 가동."},
+   {id:"office2",name:"회의·고객 데모실",cat:"관제 / OPS",c:C.ops,x:490,y:240,w:250,h:100,load:25,
+     kv:{"용도":"고객 투어·데모","트윈":"대형 스크린"},st:"ok",
+     desc:"잠재 고객에게 디지털트윈 관제를 시연하는 쇼룸. GPU 임대 영업의 핵심 접점."},
+   {id:"rtu",name:"옥상 냉각타워 (RTU)",cat:"냉각 / COOLING",c:C.cool,x:40,y:370,w:300,h:130,load:88,
+     kv:{"방식":"개방형 냉각탑","COP":"3.84","재생E":"태양광"},st:"wn",
+     desc:"건물 최상단. 서버 폐열을 외기 방출. 옥상 태양광·향후 폐열회수(스마트팜 연계 비전) 거점."},
+   {id:"elec2",name:"층 분전반 / EPS",cat:"전력 / POWER",c:C.pwr,x:360,y:370,w:160,h:130,load:50,
+     kv:{"용도":"층 배전","연계":"B1 수전"},st:"ok",
+     desc:"B1 수전실에서 올라온 전력을 각 서버실로 분배."},
+   {id:"corr2",name:"공용 통로 / 화물 E/V",cat:"공용 / UTILITY",c:C.util,x:540,y:370,w:110,h:130,load:0,
+     kv:{"E/V":"화물 겸용","제어":"트윈 연동"},st:"ok",
+     desc:"장비 반입용 화물 엘리베이터. 조명·E/V도 트윈에서 통합 제어."},
+   {id:"wc2",name:"화장실 (M/W)",cat:"코어 / CORE",c:C.core,x:660,y:370,w:80,h:130,load:0,
+     kv:{"구분":"남/여 분리"},st:"ok",desc:"2층 공용 위생시설. 수직 PS(배관 샤프트)로 전 층 정렬."},
+ ]},
+};
+
+/* ===== 랙 HW 데이터 모델 ===== */
+/* 서버실별 랙 구성: A=가동 클러스터, B=증설(일부 가동) */
+const SERVER_TYPES={
+  "GPU-H100":{u:6,cpu:"2× Xeon Plat 8480 (112C)",gpu:"8× NVIDIA H100 SXM 80GB",ram:"2TB DDR5",hdd:"8× 3.84TB NVMe",pwr:10.2,base:34},
+  "GPU-H200":{u:6,cpu:"2× Xeon Plat 8568 (96C)",gpu:"8× NVIDIA H200 141GB",ram:"2TB DDR5",hdd:"8× 7.68TB NVMe",pwr:10.2,base:35},
+  "STORAGE":{u:4,cpu:"2× Xeon Silver 4410",gpu:"—",ram:"512GB",hdd:"24× 16TB HDD + 4× NVMe",pwr:2.8,base:28},
+  "NETWORK":{u:2,cpu:"Spectrum-4 ASIC",gpu:"—",ram:"64GB",hdd:"512GB SSD",pwr:1.4,base:30},
+  "EMPTY":{u:6,cpu:"—",gpu:"—",ram:"—",hdd:"—",pwr:0,base:22},
+};
+function buildRack(roomKey,idx,active){
+  // 42U 랙. GPU 서버 위주 + 상단 네트워크 + 하단 스토리지
+  const slots=[];
+  let total=0,maxT=0,pwr=0,gpuCt=0;
+  const layout = active
+    ? ["NETWORK","GPU-H100","GPU-H100","GPU-H100","STORAGE","EMPTY"]   // 가동 랙: GPU 3대(~31kW)+스토리지
+    : (idx%2===0
+        ? ["NETWORK","GPU-H200","GPU-H200","STORAGE","EMPTY","EMPTY"]   // 증설 일부: GPU 2대
+        : ["NETWORK","EMPTY","EMPTY","EMPTY","EMPTY","EMPTY"]);         // 빈 랙
+  let uPos=42;
+  layout.forEach((tk,i)=>{
+    const t=SERVER_TYPES[tk];
+    const occupied = tk!=="EMPTY";
+    const temp = occupied ? Math.round(t.base + Math.random()*8 + (tk.startsWith("GPU")?6:0)) : 0;
+    if(occupied){total++;pwr+=t.pwr;if(temp>maxT)maxT=temp;if(tk.startsWith("GPU"))gpuCt+=8;}
+    slots.push({u:uPos, height:t.u, type:tk, occupied, temp,
+      cpu:t.cpu,gpu:t.gpu,ram:t.ram,hdd:t.hdd,pwr:t.pwr,
+      name: occupied?`${tk} #${roomKey}${idx}-${i+1}`:"(빈 슬롯)"});
+    uPos-=t.u;
+  });
+  const loadPct = active ? Math.round(72+Math.random()*22) : Math.round(15+Math.random()*30);
+  return {id:`R-${roomKey}${String(idx).padStart(2,'0')}`, room:roomKey, active, slots,
+    servers:total, gpus:gpuCt, pwr:+pwr.toFixed(1), maxTemp:maxT||22, load:loadPct};
+}
+function buildRoomRacks(roomKey){
+  const n = roomKey==="A"?12:8;
+  const racks=[];
+  for(let i=1;i<=n;i++){
+    const active = roomKey==="A" ? true : (i<=3);  // B는 앞 3랙만 가동
+    racks.push(buildRack(roomKey,i,active));
+  }
+  return racks;
+}
+const RACKS={A:buildRoomRacks("A"), B:buildRoomRacks("B")};
+
+const SVG=document.getElementById('plan'), NS="http://www.w3.org/2000/svg";
+let curFloor="2",autoTimer,paused=false,subView=null; // subView: {room} when in rack-row view
+function rnd(b,r){return b+(Math.random()*2-1)*r;}
+function el(t,a,txt){const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);if(txt!=null)e.textContent=txt;return e;}
+
+function render(floor){
+  curFloor=floor;const data=FLOORS[floor];SVG.innerHTML="";
+  // 배경 그리드
+  for(let gx=20;gx<=760;gx+=40)SVG.appendChild(el('line',{x1:gx,y1:40,x2:gx,y2:520,class:"gridline"}));
+  for(let gy=40;gy<=520;gy+=40)SVG.appendChild(el('line',{x1:20,y1:gy,x2:760,y2:gy,class:"gridline"}));
+  // 외곽
+  SVG.appendChild(el('rect',{x:20,y:40,width:740,height:480,rx:6,fill:"none",stroke:"rgba(46,196,182,.3)","stroke-width":1.5,"stroke-dasharray":"5 4"}));
+  SVG.appendChild(el('text',{x:30,y:30,class:"floorTitle"},data.title));
+  SVG.appendChild(el('text',{x:700,y:30,class:"compass"},"▲N · 1:200"));
+  data.rooms.forEach(r=>{
+    if(r.hide)return;
+    const g=el('g',{class:"room"});
+    // glow 외곽
+    g.appendChild(el('rect',{class:"glow",x:r.x-1,y:r.y-1,width:r.w+2,height:r.h+2,rx:5,stroke:r.c}));
+    g.appendChild(el('rect',{class:"body",x:r.x,y:r.y,width:r.w,height:r.h,rx:4,fill:r.c+"26"}));
+    // 좌측 카테고리 바
+    g.appendChild(el('rect',{x:r.x,y:r.y,width:4,height:r.h,rx:2,fill:r.c}));
+    const dotC=r.st==="ok"?"#5DCAA5":"#EF9F27";
+    const dot=el('circle',{cx:r.x+16,cy:r.y+16,r:5,fill:dotC});
+    if(r.st==="wn")dot.setAttribute("class","pulse");
+    g.appendChild(dot);
+    g.appendChild(el('text',{x:r.x+28,y:r.y+20,class:"t"},r.name));
+    const fk=Object.entries(r.kv)[0];
+    g.appendChild(el('text',{x:r.x+12,y:r.y+r.h-22,class:"m"},fk[0]+": "+fk[1]));
+    // 부하 게이지
+    if(r.load>0){
+      g.appendChild(el('rect',{x:r.x+12,y:r.y+r.h-14,width:r.w-70,height:4,rx:2,fill:"rgba(8,20,36,.8)"}));
+      g.appendChild(el('rect',{x:r.x+12,y:r.y+r.h-14,width:(r.w-70)*r.load/100,height:4,rx:2,fill:r.load>80?"#EF9F27":"#5DCAA5"}));
+      g.appendChild(el('text',{x:r.x+r.w-12,y:r.y+r.h-10,class:"d","text-anchor":"end"},r.load+"%"));
+    }else{
+      g.appendChild(el('text',{x:r.x+r.w-12,y:r.y+r.h-10,class:"d","text-anchor":"end"},Math.round(r.w*.06)+"×"+Math.round(r.h*.06)+"m"));
+    }
+    g.addEventListener('click',()=>{
+      pauseAuto();
+      if(r.rackRoom){ enterRackRow(r.rackRoom); }
+      else showInfo(r);
+    });
+    SVG.appendChild(g);
+  });
+}
+
+/* ===== 건축 단면도 SECTION A-A' ===== */
+function renderSection(){
+  subView=null;SVG.innerHTML="";
+  const L=70,R=720,W=R-L;                 // 건물 좌우
+  // 층 정의 (위→아래): 옥상, 2F, 1F, B1
+  const levels=[
+    {n:"옥상 RF",y:60,h:55,fill:"rgba(46,196,182,.10)",
+     items:[{x:90,w:230,c:C.cool,t:"냉각타워 RTU"},{x:340,w:160,c:C.pwr,t:"태양광 PV"},{x:520,w:160,c:C.util,t:"옥상 기계실"}]},
+    {n:"2F",y:120,h:95,fill:"rgba(42,127,212,.07)",
+     items:[{x:90,w:300,c:C.srv,t:"서버실 B (증설)"},{x:400,w:130,c:C.cool,t:"공조 B"},{x:540,w:80,c:C.ops,t:"데모실"},{x:630,w:60,c:C.core,t:"WC"}]},
+    {n:"1F",y:220,h:95,fill:"rgba(239,159,39,.06)",
+     items:[{x:90,w:120,c:C.ops,t:"로비"},{x:215,w:150,c:C.ops,t:"NOC 관제"},{x:375,w:200,c:C.srv,t:"서버실 A (GPU)"},{x:585,w:105,c:C.cool,t:"공조 A"}]},
+    {n:"B1",y:320,h:95,fill:"rgba(139,92,246,.06)",
+     items:[{x:90,w:170,c:C.pwr,t:"수전·변전"},{x:270,w:130,c:C.pwr,t:"UPS"},{x:410,w:120,c:C.pwr,t:"발전기"},{x:540,w:150,c:C.cool,t:"펌프·축열조"}]},
+    {n:"기초/지정",y:420,h:30,fill:"rgba(90,106,122,.12)",items:[{x:90,w:600,c:C.util,t:"매트기초 · 면진"}]},
+  ];
+  // 지반선
+  SVG.appendChild(el('text',{x:L,y:40,class:"floorTitle"},"건물 단면도 SECTION A-A' · 지하1/지상2 · 층고 표기"));
+  SVG.appendChild(el('line',{x1:L-30,y1:215,x2:R+30,y2:215,stroke:"#7a8a6a","stroke-width":2}));   // GL 지반선
+  SVG.appendChild(el('text',{x:R+34,y:219,class:"compass","fill":"#7a8a6a"},"G.L"));
+  SVG.appendChild(el('text',{x:L-58,y:219,class:"compass","fill":"#7a8a6a"},"±0"));
+  // 외벽
+  SVG.appendChild(el('rect',{x:L,y:60,width:W,height:390,rx:3,fill:"none",stroke:"rgba(46,196,182,.4)","stroke-width":2}));
+  levels.forEach((lv,li)=>{
+    // 층 바닥 슬래브
+    SVG.appendChild(el('rect',{x:L,y:lv.y,width:W,height:lv.h,fill:lv.fill,stroke:"rgba(46,196,182,.18)"}));
+    SVG.appendChild(el('line',{x1:L,y1:lv.y,x2:R,y2:lv.y,stroke:"rgba(46,196,182,.3)","stroke-width":1.5}));
+    // 층 라벨 + 층고
+    SVG.appendChild(el('text',{x:L-58,y:lv.y+lv.h/2,class:"m","font-size":"11"},lv.n));
+    if(li<4)SVG.appendChild(el('text',{x:L-58,y:lv.y+lv.h/2+13,class:"d"},(lv.h*0.05).toFixed(1)+"m"));
+    // 실(室)
+    lv.items.forEach(it=>{
+      const g=el('g',{class:"room"});
+      g.appendChild(el('rect',{x:it.x,y:lv.y+6,width:it.w,height:lv.h-12,rx:2,fill:it.c+"33",stroke:it.c,"stroke-width":1}));
+      g.appendChild(el('text',{x:it.x+it.w/2,y:lv.y+lv.h/2+3,class:"t","font-size":(it.w<90?"8":"10"),"text-anchor":"middle"},it.t));
+      SVG.appendChild(g);
+    });
+  });
+  // 비상계단 코어 (전 층 관통, 우측)
+  SVG.appendChild(el('rect',{x:695,y:120,width:22,height:295,fill:"rgba(122,138,106,.25)",stroke:"#7a8a6a","stroke-dasharray":"3 2"}));
+  // 계단 지그재그
+  for(let sy=130;sy<410;sy+=14){SVG.appendChild(el('line',{x1:697,y1:sy,x2:715,y2:sy+7,stroke:"#9aba8a","stroke-width":1}));}
+  SVG.appendChild(el('text',{x:706,y:432,class:"d","text-anchor":"middle"},"비상\n계단"));
+  // 화물 EV 코어 (좌측 관통)
+  SVG.appendChild(el('rect',{x:73,y:120,width:14,height:295,fill:"rgba(90,106,122,.3)",stroke:"#5a6a7a"}));
+  SVG.appendChild(el('text',{x:80,y:432,class:"d","text-anchor":"middle"},"E/V"));
+  // 수직 배관/케이블 샤프트(PS) — 점선 관통
+  SVG.appendChild(el('line',{x1:430,y1:120,x2:430,y2:415,stroke:"#5ee0e8","stroke-width":1,"stroke-dasharray":"2 3",opacity:.5}));
+  SVG.appendChild(el('text',{x:436,y:135,class:"d","fill":"#5ee0e8"},"PS/덕트"));
+  // 정보 패널
+  document.getElementById('aTitle').textContent="건축 단면도 SECTION A-A'";
+  document.getElementById('aCat').textContent="▌ 건축 / ARCHITECTURE";
+  document.getElementById('aBody').innerHTML=
+    `<div class="kv"><span class="k">규모</span><span class="v">지하1 / 지상2 + 옥상</span></div>`+
+    `<div class="kv"><span class="k">연면적</span><span class="v">약 480㎡</span></div>`+
+    `<div class="kv"><span class="k">대지면적</span><span class="v">약 4,250㎡</span></div>`+
+    `<div class="kv"><span class="k">기초</span><span class="v">매트기초+면진</span></div>`+
+    `<div class="kv"><span class="k">피난</span><span class="v">2방향 직통계단</span></div>`+
+    `<div class="desc"><b>건축 코어</b>: 우측 <b>비상계단</b>(전 층 관통, 방화구획), 좌측 <b>화물 E/V</b>, 중앙 <b>PS/덕트 샤프트</b>(배관·케이블 수직 정렬). 각 층 화장실은 PS에 인접 배치. 옥상에 냉각타워·태양광·기계실, 지하에 전력·냉각 인프라를 집약해 발열원과 사무공간을 수직 분리.</div>`+
+    `<span class="pill ok">● 건축법 피난·방화 기준 반영(개념)</span>`;
+}
+
+/* ===== 랙 도열 뷰 (서버실 진입) ===== */
+function enterRackRow(roomKey){
+  subView={room:roomKey};
+  const racks=RACKS[roomKey];SVG.innerHTML="";
+  // 배경 그리드
+  for(let gx=20;gx<=760;gx+=40)SVG.appendChild(el('line',{x1:gx,y1:40,x2:gx,y2:520,class:"gridline"}));
+  // 타이틀 + 복귀버튼
+  const back=el('g',{class:"room"});
+  back.appendChild(el('rect',{x:20,y:8,width:128,height:22,rx:4,fill:"rgba(46,196,182,.15)",stroke:"rgba(46,196,182,.4)"}));
+  back.appendChild(el('text',{x:32,y:23,class:"t","font-size":"11"},"← 평면도로 복귀"));
+  back.addEventListener('click',()=>{subView=null;render(curFloor);showRoomBack(roomKey);});
+  SVG.appendChild(back);
+  SVG.appendChild(el('text',{x:170,y:24,class:"floorTitle"},`서버실 ${roomKey} — 랙 도열 (총 ${racks.length}랙) · 랙 클릭 시 HW 상세`));
+  // 콜드 아일 / 핫 아일 라벨
+  SVG.appendChild(el('text',{x:30,y:58,class:"compass"},"❄ COLD AISLE (전면 흡기)"));
+  SVG.appendChild(el('text',{x:30,y:512,class:"compass","fill":"#EF9F27"},"🔥 HOT AISLE (후면 배기)"));
+  // 랙 도열
+  const n=racks.length, cols=Math.min(n,12);
+  const gap=10, marginX=30, marginTop=72, rowH=410;
+  const rw=Math.floor((740-marginX-(cols-1)*gap)/cols);
+  racks.forEach((rk,i)=>{
+    const rx=marginX+i*(rw+gap), ry=marginTop;
+    const g=el('g',{class:"room"});
+    // 랙 캐비닛
+    const tColor = rk.maxTemp>=46?"#E24B4A": rk.maxTemp>=40?"#EF9F27": rk.active?"#5DCAA5":"#5a6a7a";
+    g.appendChild(el('rect',{class:"glow",x:rx-1,y:ry-1,width:rw+2,height:rowH+2,rx:4,stroke:tColor}));
+    g.appendChild(el('rect',{x:rx,y:ry,width:rw,height:rowH,rx:3,fill:"rgba(10,22,38,.9)",stroke:"rgba(46,196,182,.25)"}));
+    // 슬롯(서버) 도열 — 42U를 비율로
+    const innerH=rowH-30, top=ry+8;
+    rk.slots.forEach(s=>{
+      const sy=top + (42-s.u)/42*innerH;
+      const sh=Math.max(s.height/42*innerH-1.5, 5);
+      let fill="rgba(40,56,74,.5)"; // empty
+      if(s.occupied){
+        if(s.type.startsWith("GPU"))fill = s.temp>=46?"#E24B4A":"#2a7fd4";
+        else if(s.type==="STORAGE")fill="#2ec4b6";
+        else if(s.type==="NETWORK")fill="#8b5cf6";
+      }
+      g.appendChild(el('rect',{x:rx+4,y:sy,width:rw-8,height:sh,rx:1.5,fill:fill,opacity:s.occupied?.85:.3,stroke:"rgba(8,14,22,.8)","stroke-width":.5}));
+      // 슬롯 LED
+      if(s.occupied)g.appendChild(el('circle',{cx:rx+9,cy:sy+sh/2,r:1.6,fill:s.temp>=46?"#E24B4A":"#9FE1CB"}));
+    });
+    // 랙 라벨 + 수치
+    g.appendChild(el('text',{x:rx+rw/2,y:ry+rowH+16,class:"m","text-anchor":"middle","font-size":"9"},rk.id));
+    g.appendChild(el('text',{x:rx+rw/2,y:ry+rowH+28,class:"d","text-anchor":"middle"},rk.maxTemp+"°C·"+rk.pwr+"kW"));
+    g.addEventListener('click',()=>showRack(rk));
+    SVG.appendChild(g);
+  });
+  // 진입 시 요약 패널
+  const sumS=racks.reduce((a,r)=>a+r.servers,0), sumG=racks.reduce((a,r)=>a+r.gpus,0), sumP=racks.reduce((a,r)=>a+r.pwr,0);
+  document.getElementById('aTitle').textContent=`서버실 ${roomKey}`;
+  document.getElementById('aCat').textContent="▌ 서버 / IT · 랙 도열 뷰";
+  document.getElementById('aBody').innerHTML=
+    `<div class="kv"><span class="k">총 랙</span><span class="v">${racks.length}</span></div>`+
+    `<div class="kv"><span class="k">서버(노드)</span><span class="v">${sumS}</span></div>`+
+    `<div class="kv"><span class="k">GPU 합계</span><span class="v">${sumG}</span></div>`+
+    `<div class="kv"><span class="k">랙 전력합</span><span class="v">${sumP.toFixed(1)}kW</span></div>`+
+    `<div class="desc">랙 색상 = 최고온도. 파랑(GPU)·청록(스토리지)·보라(네트워크)·회색(빈슬롯). <b>랙을 클릭</b>하면 인서트된 서버별 CPU·GPU·RAM·HDD·전력·온도가 표시됩니다.</div>`+
+    `<span class="pill ok">● COLD/HOT AISLE 분리 운영</span>`;
+}
+function showRoomBack(roomKey){ // 복귀 시 서버실 정보 다시 표시
+  const r=FLOORS[curFloor].rooms.find(x=>x.rackRoom===roomKey); if(r)showInfo(r);
+}
+
+/* ===== 랙 상세 (HW 인서트 정보) ===== */
+function showRack(rk){
+  document.getElementById('aTitle').textContent=rk.id;
+  document.getElementById('aCat').textContent=`▌ 서버실 ${rk.room} · ${rk.active?"가동 중":"증설/대기"}`;
+  let h=`<div class="kv"><span class="k">서버(노드)</span><span class="v">${rk.servers}</span></div>`+
+        `<div class="kv"><span class="k">GPU 탑재</span><span class="v">${rk.gpus}장</span></div>`+
+        `<div class="kv"><span class="k">랙 전력</span><span class="v">${rk.pwr}kW</span></div>`+
+        `<div class="kv"><span class="k">최고온도</span><span class="v" style="color:${rk.maxTemp>=46?'#E24B4A':rk.maxTemp>=40?'#EF9F27':'#5DCAA5'}">${rk.maxTemp}°C</span></div>`+
+        `<div class="mini"><div class="lab">▌ 랙 부하 / LOAD</div><div class="bar"><i style="width:${rk.load}%;background:${rk.load>80?'linear-gradient(90deg,#EF9F27,#E24B4A)':'linear-gradient(90deg,#5DCAA5,#9FE1CB)'}"></i></div></div>`;
+  h+=`<div class="mini"><div class="lab">▌ 인서트 HW (U 슬롯별)</div>`;
+  rk.slots.forEach(s=>{
+    if(!s.occupied){h+=`<div class="hwslot empty">U — · 빈 슬롯</div>`;return;}
+    const tc=s.temp>=46?'#E24B4A':s.temp>=40?'#EF9F27':'#9FE1CB';
+    h+=`<div class="hwslot" style="border-left-color:${s.type.startsWith('GPU')?'#2a7fd4':s.type==='STORAGE'?'#2ec4b6':'#8b5cf6'}">
+      <div class="hwt">${s.name} <span style="float:right;color:${tc}">${s.temp}°C · ${s.pwr}kW</span></div>
+      <div class="hwr"><span>CPU</span>${s.cpu}</div>
+      <div class="hwr"><span>GPU</span>${s.gpu}</div>
+      <div class="hwr"><span>RAM</span>${s.ram}</div>
+      <div class="hwr"><span>HDD</span>${s.hdd}</div>
+    </div>`;
+  });
+  h+=`</div>`;
+  h+=`<div class="backbtn" id="rackBack">← 랙 도열로 돌아가기</div>`;
+  document.getElementById('aBody').innerHTML=h;
+  const bb=document.getElementById('rackBack'); if(bb)bb.onclick=()=>enterRackRow(rk.room);
+}
+
+function showInfo(r){
+  document.getElementById('aTitle').textContent=r.name;
+  document.getElementById('aCat').textContent="▌ "+r.cat;
+  let h="";
+  for(const k in r.kv)h+=`<div class="kv"><span class="k">${k}</span><span class="v">${r.kv[k]}</span></div>`;
+  if(r.load>0)h+=`<div class="mini"><div class="lab">▌ 부하율 / LOAD</div><div class="bar"><i style="width:${r.load}%;background:${r.load>80?'linear-gradient(90deg,#EF9F27,#E24B4A)':'linear-gradient(90deg,#5DCAA5,#9FE1CB)'}"></i></div><div class="d" style="font-family:var(--mono);font-size:11px;color:${r.load>80?'#EF9F27':'#5DCAA5'};text-align:right">${r.load}%</div></div>`;
+  h+=`<div class="desc">${r.desc}</div>`;
+  h+=r.st==="ok"?`<span class="pill ok">● 정상 운영 / NORMAL</span>`:`<span class="pill wn">● 주의 / WARNING</span>`;
+  document.getElementById('aBody').innerHTML=h;
+}
+
+document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');subView=null;pauseAuto();
+  if(b.dataset.f==="S"){renderSection();return;}
+  render(b.dataset.f);if(view==="3d")build3D(b.dataset.f);
+}));
+
+/* 시계 + 온도 시뮬 + AUTO 순환 */
+function tick(){const d=new Date();document.getElementById('clock').textContent=d.toTimeString().slice(0,8);}
+setInterval(tick,1000);tick();
+setInterval(()=>{document.getElementById('tAvg').textContent=rnd(23.4,.6).toFixed(1)+"°C";},2200);
+function startAuto(){if(paused)return;autoTimer=setInterval(()=>{
+  if(subView)return;
+  const order=["2","1","0"];const next=order[(order.indexOf(curFloor)+1)%3];
+  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.f===next));
+  render(next);if(view==="3d")build3D(next);
+},6000);}
+function pauseAuto(){paused=true;clearInterval(autoTimer);}
+startAuto();
+
+/* ===== 2D/3D 토글 ===== */
+let view="2d",threeReady=false;
+const btn2d=document.getElementById('btn2d'),btn3d=document.getElementById('btn3d');
+btn2d.onclick=()=>setView("2d");btn3d.onclick=()=>{pauseAuto();setView("3d");};
+function setView(v){view=v;btn2d.classList.toggle('active',v==="2d");btn3d.classList.toggle('active',v==="3d");
+  document.getElementById('svgWrap').style.display=v==="2d"?"block":"none";
+  document.getElementById('three').style.display=v==="3d"?"block":"none";
+  if(v==="3d")ensureThree(()=>build3D(curFloor));}
+
+/* ===== 3D (Three.js CDN) ===== */
+let TJS,scene,camera,renderer,controls,raycaster,mouse,meshMap={};
+function ensureThree(cb){if(threeReady){cb();return;}
+  const s=document.createElement('script');s.src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js";
+  s.onload=()=>{const s2=document.createElement('script');s2.src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js";
+    s2.onload=()=>{TJS=window.THREE;initThree();threeReady=true;cb();};
+    s2.onerror=()=>{TJS=window.THREE;initThree();threeReady=true;cb();};document.body.appendChild(s2);};
+  s.onerror=()=>{document.getElementById('three').innerHTML="<div style='color:#6a9a8a;padding:50px;text-align:center;font-family:Courier New,monospace'>3D 라이브러리 로드 실패 (오프라인). 2D PLAN을 이용하세요.</div>";};
+  document.body.appendChild(s);}
+function initThree(){const wrap=document.getElementById('three'),W=wrap.clientWidth,H=wrap.clientHeight;
+  scene=new TJS.Scene();scene.background=new TJS.Color(0x0d1622);
+  scene.fog=new TJS.Fog(0x0d1622,800,2200);
+  camera=new TJS.PerspectiveCamera(45,W/H,.1,4000);camera.position.set(560,540,680);
+  renderer=new TJS.WebGLRenderer({antialias:true});renderer.setSize(W,H);renderer.setPixelRatio(window.devicePixelRatio);
+  wrap.appendChild(renderer.domElement);
+  if(TJS.OrbitControls){controls=new TJS.OrbitControls(camera,renderer.domElement);controls.target.set(390,40,280);controls.enableDamping=true;}
+  scene.add(new TJS.AmbientLight(0xbfe6dd,.55));
+  const dl=new TJS.DirectionalLight(0x9fe1cb,.9);dl.position.set(400,800,300);scene.add(dl);
+  const dl2=new TJS.DirectionalLight(0x5ee0e8,.35);dl2.position.set(-300,400,-200);scene.add(dl2);
+  const grid=new TJS.GridHelper(1400,28,0x2ec4b6,0x16324a);grid.position.set(390,-2,280);scene.add(grid);
+  raycaster=new TJS.Raycaster();mouse=new TJS.Vector2();
+  renderer.domElement.addEventListener('click',onPick);
+  window.addEventListener('resize',()=>{if(view!=="3d")return;const w=wrap.clientWidth,h=wrap.clientHeight;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);});
+  animate();}
+function clear3D(){for(const k in meshMap)scene.remove(meshMap[k]);meshMap={};}
+function build3D(floor){if(!scene)return;clear3D();const data=FLOORS[floor];
+  const baseY=floor==="0"?-95:floor==="1"?0:95;
+  data.rooms.forEach(r=>{const h=r.st==="wn"?72:56;
+    const geo=new TJS.BoxGeometry(r.w,h,r.h);
+    const col=new TJS.Color(r.c);
+    const mat=new TJS.MeshStandardMaterial({color:col,transparent:true,opacity:.55,
+      emissive:new TJS.Color(r.st==="wn"?0x4a3300:0x0a2030),emissiveIntensity:.6,metalness:.3,roughness:.4});
+    const m=new TJS.Mesh(geo,mat);m.position.set(r.x+r.w/2,baseY+h/2,r.y+r.h/2);m.userData=r;
+    const edges=new TJS.LineSegments(new TJS.EdgesGeometry(geo),new TJS.LineBasicMaterial({color:r.st==="wn"?0xEF9F27:0x5DCAA5,transparent:true,opacity:.9}));
+    m.add(edges);scene.add(m);meshMap[r.id]=m;});}
+function onPick(e){const rect=renderer.domElement.getBoundingClientRect();
+  mouse.x=((e.clientX-rect.left)/rect.width)*2-1;mouse.y=-((e.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(mouse,camera);const hits=raycaster.intersectObjects(Object.values(meshMap));
+  if(hits.length)showInfo(hits[0].object.userData);}
+function animate(){requestAnimationFrame(animate);if(controls)controls.update();if(renderer&&view==="3d")renderer.render(scene,camera);}
+
+render("2");
+</script>
+</body>
+</html>
